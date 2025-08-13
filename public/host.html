@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Ведущий — Монополия realtime</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/styles.css" rel="stylesheet" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Панель ведущего</h1>
+
+      <div class="grid grid-2">
+        <div>
+          <h2>Игроки</h2>
+          <div id="playersList" class="list"></div>
+        </div>
+
+        <div>
+          <h2>Действия</h2>
+          <div class="row">
+            <select id="playerSelect"></select>
+          </div>
+          <hr />
+          <div class="row">
+            <input id="moneyDelta" type="number" placeholder="Δ у.е. (например 100 или -50)" />
+            <input id="trustDelta" type="number" placeholder="Δ доверия (напр. 10 или -5)" />
+          </div>
+          <div class="row">
+            <input id="note" placeholder="Комментарий (необязательно)" style="flex:1" />
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button id="applyBtn" class="btn-accent">Применить изменения</button>
+            <button id="resetBtn">Сбросить поля</button>
+            <button id="removeBtn" class="btn-danger" title="Удалить игрока (из сессии)">Удалить игрока</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+
+    const playersList = document.getElementById("playersList");
+    const select      = document.getElementById("playerSelect");
+    const moneyDelta  = document.getElementById("moneyDelta");
+    const trustDelta  = document.getElementById("trustDelta");
+    const note        = document.getElementById("note");
+    const applyBtn    = document.getElementById("applyBtn");
+    const resetBtn    = document.getElementById("resetBtn");
+    const removeBtn   = document.getElementById("removeBtn");
+
+    // Ведущий подключается
+    socket.emit("host:join");
+
+    function renderPlayers(list) {
+      // Заполним селект
+      select.innerHTML = "";
+      list.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id; opt.textContent = `${p.name} — ${p.money} у.е., доверие ${p.trust}`;
+        select.appendChild(opt);
+      });
+
+      // Список игроков с мини-историей
+      playersList.innerHTML = list.map(p => `
+        <div class="card" style="padding:12px; margin-bottom:8px;">
+          <div class="row">
+            <div class="badge">${p.name}</div>
+            <div class="pill">ID: ${p.id}</div>
+          </div>
+          <div class="kpi" style="margin-top:8px;">
+            <div class="pill">💰 ${p.money} у.е.</div>
+            <div class="pill">🤝 ${p.trust} доверия</div>
+          </div>
+          <div class="small" style="margin-top:8px;">
+            <b>История (последние):</b>
+            <div>
+              ${p.history.map(h => `• ${new Date(h.ts).toLocaleString()} — ${h.note}`).join("<br/>")}
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    socket.on("players:list", renderPlayers);
+
+    applyBtn.addEventListener("click", () => {
+      const playerId = select.value;
+      if (!playerId) return alert("Выберите игрока");
+      const m = Number(moneyDelta.value || 0);
+      const t = Number(trustDelta.value || 0);
+      const n = note.value.trim();
+
+      socket.emit("host:adjust", {
+        playerId, moneyDelta: m, trustDelta: t, note: n
+      }, (res) => {
+        if (!res?.ok) alert(res?.error || "Не удалось применить изменения");
+        else resetFields(false);
+      });
+    });
+
+    removeBtn.addEventListener("click", () => {
+      const playerId = select.value;
+      if (!playerId) return alert("Сначала выберите игрока");
+      if (!confirm("Удалить игрока из текущей сессии?")) return;
+      socket.emit("host:removePlayer", { playerId }, (res) => {
+        if (!res?.ok) alert(res?.error || "Не удалось удалить игрока");
+      });
+    });
+
+    function resetFields(clearSelect = false) {
+      moneyDelta.value = "";
+      trustDelta.value = "";
+      note.value = "";
+      if (clearSelect) select.selectedIndex = -1;
+    }
+    resetBtn.addEventListener("click", () => resetFields());
+  </script>
+</body>
+</html>
